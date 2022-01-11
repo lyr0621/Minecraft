@@ -889,14 +889,9 @@ def setup():
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
     setup_fog()
 
-
-def main():
-    window = Window(width=800, height=600, caption='Pyglet', resizable=True)
-    # Hide the mouse cursor and prevent the mouse from leaving the window.
-    window.set_exclusive_mouse(True)
-    setup()
-    pyglet.app.run()
-
-
-if __name__ == '__main__':
-    main()
+import os
+window = Window(width=1200, height=960, caption='Pyglet', resizable=True)
+# Hide the mouse cursor and prevent the mouse from leaving the window.
+window.set_exclusive_mouse(True)
+setup()
+pyglet.app.run()
