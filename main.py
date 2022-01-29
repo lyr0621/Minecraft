@@ -1,9 +1,25 @@
+'''
+chages by LYR:
+1.player cannot place blocks inside their bodies
+2.player can jump more than the height of a block, according to the real MC
+3.gravity is higher, so that it feels more real, as this is the only way for the time the player stays in the air remains the same after editing the max jump height
+
+
+TODO:
+1.make the player walk smother, meaning that the player does not go to the walking speed in a tick, but speeds up or speeds down in a smother way
+2.when the mouse is clicked and didn't yet release, the mouse can't move this be solved with multi-threads
+'''
+
+
 from __future__ import division
+from copy import deepcopy
 
 import sys
 import math
 import random
 import time
+
+from copy import deepcopy
 
 from collections import deque
 from pyglet import image
@@ -19,8 +35,10 @@ SECTOR_SIZE = 16
 WALKING_SPEED = 5
 FLYING_SPEED = 15
 
-GRAVITY = 20.0
-MAX_JUMP_HEIGHT = 1.0 # About the height of a block.
+# GRAVITY = 20    #originally 20, but I edited it to 25, so it feels more like the real MC
+GRAVITY = 25
+#MAX_JUMP_HEIGHT = 1.25
+MAX_JUMP_HEIGHT = 1.25  # originally 1, About the height of a block. But I edit it to 1.3 according to the real minecraft
 # To derive the formula for calculating jump speed, first solve
 #    v_t = v_0 + a * t
 # for the time at which you achieve maximum height, where a is the acceleration
@@ -36,17 +54,18 @@ PLAYER_HEIGHT = 2
 if sys.version_info[0] >= 3:
     xrange = range
 
+
 def cube_vertices(x, y, z, n):
     """ Return the vertices of the cube at position x, y, z with size 2*n.
 
     """
     return [
-        x-n,y+n,z-n, x-n,y+n,z+n, x+n,y+n,z+n, x+n,y+n,z-n,  # top
-        x-n,y-n,z-n, x+n,y-n,z-n, x+n,y-n,z+n, x-n,y-n,z+n,  # bottom
-        x-n,y-n,z-n, x-n,y-n,z+n, x-n,y+n,z+n, x-n,y+n,z-n,  # left
-        x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
-        x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
-        x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
+        x - n, y + n, z - n, x - n, y + n, z + n, x + n, y + n, z + n, x + n, y + n, z - n,  # top
+        x - n, y - n, z - n, x + n, y - n, z - n, x + n, y - n, z + n, x - n, y - n, z + n,  # bottom
+        x - n, y - n, z - n, x - n, y - n, z + n, x - n, y + n, z + n, x - n, y + n, z - n,  # left
+        x + n, y - n, z + n, x + n, y - n, z - n, x + n, y + n, z - n, x + n, y + n, z + n,  # right
+        x - n, y - n, z + n, x + n, y - n, z + n, x + n, y + n, z + n, x - n, y + n, z + n,  # front
+        x + n, y - n, z - n, x - n, y - n, z - n, x - n, y + n, z - n, x + n, y + n, z - n,  # back
     ]
 
 
@@ -82,12 +101,12 @@ BRICK = tex_coords((2, 0), (2, 0), (2, 0))
 STONE = tex_coords((2, 1), (2, 1), (2, 1))
 
 FACES = [
-    ( 0, 1, 0),
-    ( 0,-1, 0),
+    (0, 1, 0),
+    (0, -1, 0),
     (-1, 0, 0),
-    ( 1, 0, 0),
-    ( 0, 0, 1),
-    ( 0, 0,-1),
+    (1, 0, 0),
+    (0, 0, 1),
+    (0, 0, -1),
 ]
 
 
@@ -152,6 +171,8 @@ class Model(object):
         # Simple function queue implementation. The queue is populated with
         # _show_block() and _hide_block() calls
         self.queue = deque()
+
+        self.PlayerPosition = (999,999,999)
 
         self._initialize()
 
@@ -246,6 +267,17 @@ class Model(object):
         """
         if position in self.world:
             self.remove_block(position, immediate)
+
+        #remove the block if it's position is already filled with the player's body
+        PlayerPosition = deepcopy(list(self.PlayerPosition))          #so that changes on PlayerPosition won't effect self.PlayerPosition
+        PlayerPosition[1] -= 1
+        if position == self.PlayerPosition or position == tuple(PlayerPosition):
+            return
+        #if position(0) - 
+
+        if immediate:   #so that it dosn't print so much lines when the game initialzes
+            print(position, "/", self.PlayerPosition, PlayerPosition)    #print the informations, and see that the player's position is always 1 block higher than the block he stands
+
         self.world[position] = texture
         self.sectors.setdefault(sectorize(position), []).append(position)
         if immediate:
@@ -327,8 +359,8 @@ class Model(object):
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
         self._shown[position] = self.batch.add(24, GL_QUADS, self.group,
-            ('v3f/static', vertex_data),
-            ('t2f/static', texture_data))
+                                               ('v3f/static', vertex_data),
+                                               ('t2f/static', texture_data))
 
     def hide_block(self, position, immediate=True):
         """ Hide the block at the given `position`. Hiding does not remove the
@@ -412,13 +444,15 @@ class Model(object):
         func, args = self.queue.popleft()
         func(*args)
 
-    def process_queue(self):
+    def process_queue(self,PlayerPosition):
         """ Process the entire queue while taking periodic breaks. This allows
         the game loop to run smoothly. The queue contains calls to
         _show_block() and _hide_block() so this method should be called if
         add_block() or remove_block() was called with immediate=False
 
         """
+        self.PlayerPosition = PlayerPosition     #avoid placing block that have the same position with the player
+        
         start = time.perf_counter()
         while self.queue and time.perf_counter() - start < 1.0 / TICKS_PER_SEC:
             self._dequeue()
@@ -436,7 +470,7 @@ class Window(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
         super(Window, self).__init__(*args, **kwargs)
 
-        # Whether or not the window exclusively captures the mouse.
+        # Whether the window exclusively captures the mouse.
         self.exclusive = False
 
         # When flying gravity has no effect and speed is increased.
@@ -465,7 +499,7 @@ class Window(pyglet.window.Window):
         # Which sector the player is currently in.
         self.sector = None
 
-        # The crosshairs at the center of the screen.
+        # The cross-hairs at the center of the screen.
         self.reticle = None
 
         # Velocity in the y (upward) direction.
@@ -487,8 +521,8 @@ class Window(pyglet.window.Window):
 
         # The label that is displayed in the top left of the canvas.
         self.label = pyglet.text.Label('', font_name='Arial', font_size=18,
-            x=10, y=self.height - 10, anchor_x='left', anchor_y='top',
-            color=(0, 0, 0, 255))
+                                       x=10, y=self.height - 10, anchor_x='left', anchor_y='top',
+                                       color=(0, 0, 0, 255))
 
         # This call schedules the `update()` method to be called
         # TICKS_PER_SEC. This is the main game event loop.
@@ -568,7 +602,8 @@ class Window(pyglet.window.Window):
             The change in time since the last call.
 
         """
-        self.model.process_queue()
+        #give the process_queue the player's position, to avoid placing block inside the player
+        self.model.process_queue(normalize(self.position))
         sector = sectorize(self.position)
         if sector != self.sector:
             self.model.change_sectors(self.sector, sector)
@@ -592,7 +627,7 @@ class Window(pyglet.window.Window):
         """
         # walking
         speed = FLYING_SPEED if self.flying else WALKING_SPEED
-        d = dt * speed # distance covered this tick.
+        d = dt * speed  # distance covered this tick.
         dx, dy, dz = self.get_motion_vector()
         # New position in space, before accounting for gravity.
         dx, dy, dz = dx * d, dy * d, dz * d
@@ -700,6 +735,7 @@ class Window(pyglet.window.Window):
 
         """
         if self.exclusive:
+        # if self.exclusive or True:        #this will make the vision of player still moving even if the mouse is already released by "esc" key
             m = 0.15
             x, y = self.rotation
             x, y = x + dx * m, y + dy * m
@@ -770,8 +806,8 @@ class Window(pyglet.window.Window):
         x, y = self.width // 2, self.height // 2
         n = 10
         self.reticle = pyglet.graphics.vertex_list(4,
-            ('v2i', (x - n, y, x + n, y, x, y - n, x, y + n))
-        )
+                                                   ('v2i', (x - n, y, x + n, y, x, y - n, x, y + n))
+                                                   )
 
     def set_2d(self):
         """ Configure OpenGL to draw in 2d.
@@ -889,9 +925,14 @@ def setup():
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
     setup_fog()
 
-import os
-window = Window(width=1200, height=960, caption='Pyglet', resizable=True)
-# Hide the mouse cursor and prevent the mouse from leaving the window.
-window.set_exclusive_mouse(True)
-setup()
-pyglet.app.run()
+
+def main():
+    window = Window(width=800, height=600, caption='Pyglet', resizable=True)
+    # Hide the mouse cursor and prevent the mouse from leaving the window.
+    window.set_exclusive_mouse(True)
+    setup()
+    pyglet.app.run()
+
+
+if __name__ == '__main__':
+    main()
